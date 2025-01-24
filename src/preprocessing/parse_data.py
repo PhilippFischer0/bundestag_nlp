@@ -47,7 +47,7 @@ class PlenarprotokollXMLParser:
                             else element.find("rolle_lang").text
                         )
                     self.data[file_id][-1][tagesordnungspunkt_id][-1][rede_id].append(
-                        {"redner": redner}
+                        {redner_id: redner}
                     )
 
                 for text_paragraph in rede:
