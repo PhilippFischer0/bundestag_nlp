@@ -103,6 +103,16 @@ class PlenarprotokollXMLParser:
                         {"redner": redner}
                     )
 
+        keys_to_remove = []
+        for tagesordnungspunkt_key, tagesordnungspunkt_values in self.data[file_id][
+            "inhalt"
+        ].items():
+            if len(list(tagesordnungspunkt_values)) == 0:
+                keys_to_remove.append(tagesordnungspunkt_key)
+
+        for key in keys_to_remove:
+            self.data[file_id]["inhalt"].pop(key)
+
         return self.data
 
     def crawl_directory(self, dir_path: str, out_path: str) -> None:
