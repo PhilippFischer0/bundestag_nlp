@@ -1,5 +1,6 @@
 import sqlite3
 
+# SQL statements to initialize the database tables
 sql_statements = [
     """CREATE TABLE IF NOT EXISTS sitzungen(
             sitzungs_id INTEGER PRIMARY KEY NOT NULL,
@@ -43,12 +44,15 @@ sql_statements = [
         );""",
 ]
 
+
 if __name__ == "__main__":
     try:
+        # connect to and create database
         with sqlite3.connect("data/data.db") as conn:
             print("database created")
 
         try:
+            # create tables in the database by iterating through the SQL statements defined above
             print("creating tables...")
             cursor = conn.cursor()
 

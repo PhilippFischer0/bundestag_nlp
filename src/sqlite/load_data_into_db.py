@@ -2,9 +2,9 @@ import sqlite3, json
 
 
 def extract_unique_redner(file_path):
+    # recursively iterate through the json file to extract all unique redner dictionaries
     with open(file_path, "r", encoding="utf-8") as file:
         data = json.load(file)
-
     unique_redner = {}
 
     def find_redner(obj):
@@ -21,11 +21,12 @@ def extract_unique_redner(file_path):
                 find_redner(item)
 
     find_redner(data)
-
+    # return all unique instances of redner in a list
     return list(unique_redner.values())
 
 
 def extract_unique_rollen(unique_redner_list: json):
+    # iterate through all unique speakers to extract all roles present
     unique_rollen = {}
     rollen_map = {}
     index_counter = 1
@@ -38,6 +39,7 @@ def extract_unique_rollen(unique_redner_list: json):
         else:
             continue
 
+    # return the map so foreign keys can be set later on
     return unique_rollen, rollen_map
 
 
@@ -45,15 +47,15 @@ unique_redner_list = extract_unique_redner("data/out.json")
 
 rollen, r_map = extract_unique_rollen(unique_redner_list)
 
-# with open("data/test.json", "w", encoding="utf-8") as file:
-#     json.dump(unique_redner_list, file, indent=4, ensure_ascii=False)
-
+# load file data
 with open("data/out.json", "r") as file:
     data = json.load(file)
+    # connect to the database and initialize cursor to execute SQL statements
     with sqlite3.connect("data/data.db") as conn:
         cursor = conn.cursor()
+
+        # iterate through the roles and add them to the relevant table
         for key, rolle in rollen.items():
-            # print(rolle)
             cursor.execute(
                 """
                 INSERT INTO rollen (rollen_id, beschreibung)
@@ -61,7 +63,10 @@ with open("data/out.json", "r") as file:
             """,
                 (int(key), rolle),
             )
+
+        # iterate through unique_redner_list and add each item to the redner table
         for redner_item in unique_redner_list:
+            # case 1 of 4 -> redner has a title and a role
             if "titel" in redner_item and "rolle" in redner_item:
                 cursor.execute(
                     """
@@ -75,6 +80,7 @@ with open("data/out.json", "r") as file:
                         redner_item["nachname"],
                     ),
                 )
+            # case 2 of 4 -> redner has a title but no role
             elif "titel" in redner_item and not "rolle" in redner_item:
                 cursor.execute(
                     """
@@ -89,6 +95,7 @@ with open("data/out.json", "r") as file:
                         redner_item["fraktion"],
                     ),
                 )
+            # case 3 of 4 -> redner has a role but no title
             elif "rolle" in redner_item and not "titel" in redner_item:
                 cursor.execute(
                     """
@@ -101,6 +108,7 @@ with open("data/out.json", "r") as file:
                         redner_item["nachname"],
                     ),
                 )
+            # case 4 of 4 -> redner has neither a title nor a role
             else:
                 cursor.execute(
                     """
@@ -114,6 +122,8 @@ with open("data/out.json", "r") as file:
                         redner_item["fraktion"],
                     ),
                 )
+
+        # iterate through the sitzungen and add the relevant metadata to the database
         for sitzungs_key, sitzungs_dict in data.items():
             cursor.execute(
                 """
@@ -128,6 +138,7 @@ with open("data/out.json", "r") as file:
                 ),
             )
 
+            # iterate through the tagesordnungspunkte in each sitzung and add the foreign key
             for (
                 tagesordnungspunkt_key,
                 tagesordnungspunkt_dict,
@@ -141,6 +152,7 @@ with open("data/out.json", "r") as file:
                 )
                 tagesordnungspunkt_id = cursor.lastrowid
 
+                # iterate through all reden in each tagesordnungspunkt and add the foreign key to it, the speaker and their role if they have one
                 for rede_key, rede_values in tagesordnungspunkt_dict.items():
                     if "rolle" in rede_values["redner"]:
                         cursor.execute(
@@ -153,9 +165,11 @@ with open("data/out.json", "r") as file:
                                 "\n".join(rede_values["text"]),
                                 rede_values["redner"]["redner_id"],
                                 tagesordnungspunkt_id,
+                                # here the role map is used to get the corresponding foreign key
                                 r_map[rede_values["redner"]["rolle"]],
                             ),
                         )
+                    # in case the speaker doesn't have a role
                     else:
                         cursor.execute(
                             """
@@ -169,6 +183,7 @@ with open("data/out.json", "r") as file:
                                 tagesordnungspunkt_id,
                             ),
                         )
+                    # iterate through all comments made in a speech and add them to the database
                     for kommentar in rede_values["kommentare"]:
                         cursor.execute(
                             """
@@ -181,5 +196,4 @@ with open("data/out.json", "r") as file:
                                 rede_key,
                             ),
                         )
-
         conn.commit()

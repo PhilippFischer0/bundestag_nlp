@@ -7,20 +7,25 @@ class PlenarprotokollXMLParser:
     def __init__(self):
         self.data = dict()
 
+    # due to the xml-files containing invisible and ambiguous characters they have to be removed
     def remove_invisible_chars(self, text):
+        # TODO: improve this so ambiguous characters are gone, removes some spacing characters that should stay
         invisible_chars_pattern = re.compile(r"[\u200B-\u200D\uFEFF\u00A0]")
         cleaned_text = invisible_chars_pattern.sub("", text)
 
-        return cleaned_text
+        return text
 
     def get_xml_content(self, file: str) -> dict:
         tree = ET.parse(file)
         root = tree.getroot()
+
+        # get the filename attributes from the root element and add as key in dictionary
         file_id = f"{root.attrib.get('wahlperiode')}{root.attrib.get('sitzung-nr')}"
 
         if file_id not in self.data:
             self.data[file_id] = {"metadaten": {}, "inhalt": {}}
 
+        # get metadata of the sitzung and add the to the metadata dict
         veranstaltungsdaten = root.find("vorspann/kopfdaten/veranstaltungsdaten")
         date = veranstaltungsdaten.find("datum").attrib.get("date")
 
@@ -35,32 +40,30 @@ class PlenarprotokollXMLParser:
             "sitzungsende": sitzungsende,
         }
 
+        # iterate through all tagesordnungspunkte in a sitzung and add the to inhalt
         for tagesordnungspunkt in sitzung.findall("tagesordnungspunkt"):
             tagesordnungspunkt_id = tagesordnungspunkt.attrib.get("top-id")
 
             if tagesordnungspunkt_id not in self.data[file_id]:
                 self.data[file_id]["inhalt"].update({tagesordnungspunkt_id: {}})
 
-            # self.data[file_id][-1][tagesordnungspunkt_id].append({"thema": []})
-            # for tagesordnungspunkt_paragraph in tagesordnungspunkt.findall("p"):
-            #     if tagesordnungspunkt_paragraph.text is not None:
-            #         self.data[file_id][-1][tagesordnungspunkt_id][-1]["thema"].extend(
-            #             [self.remove_invisible_chars(tagesordnungspunkt_paragraph.text)]
-            #         )
-
+            # iterate through all rede elements and add them to the corresponding tagesordnungspunkt
             for rede in tagesordnungspunkt.findall("rede"):
                 rede_id = rede.attrib.get("id")
                 self.data[file_id]["inhalt"][tagesordnungspunkt_id].update(
                     {rede_id: {}}
                 )
 
+                # add two lists, one for the text of the speech the other for comments made by other politicians
                 self.data[file_id]["inhalt"][tagesordnungspunkt_id][rede_id].update(
                     {"text": [], "kommentare": []}
                 )
-                rede_paragraph = []
+                # initialize a comment counter which is later used as an index
                 comment_counter = 0
 
+                # iterate through all paragraphs of a speech
                 for text_paragraph in rede:
+                    # check if it is a relevant paragraph for the speech text, if so extend the text list with it
                     if not (
                         text_paragraph.attrib.get("klasse") == "redner"
                         or text_paragraph.tag == "kommentar"
@@ -72,6 +75,7 @@ class PlenarprotokollXMLParser:
                             "text"
                         ].extend(rede_paragraph)
 
+                    # else check if it is a comment, if so add it to the list of comments
                     elif text_paragraph.tag == "kommentar":
                         comment_counter += 1
                         self.data[file_id]["inhalt"][tagesordnungspunkt_id][rede_id][
@@ -84,17 +88,22 @@ class PlenarprotokollXMLParser:
                             }
                         )
 
+                # extract the redner element from the relevant paragraph
                 if rede.find("p").attrib.get("klasse") == "redner":
                     redner_paragraph = rede.find("p")
                     redner_element = redner_paragraph.find("redner")
+                    # find the name element, which holds the necessary metainformation
                     name = redner_element.find("name")
+                    # get the id from the speaker and add it to th relevant dictionary
                     redner_id = redner_element.attrib.get("id")
                     redner = {"redner_id": redner_id}
 
+                    # iterate through the elements in the name element and add them to the redner dictionary
                     for element in name:
                         redner[str(element.tag)] = (
                             self.remove_invisible_chars(element.text)
                             if element.text is not None
+                            # check if the redner has a role and if so adds it to the dict
                             else self.remove_invisible_chars(
                                 element.find("rolle_lang").text
                             )
@@ -103,6 +112,7 @@ class PlenarprotokollXMLParser:
                         {"redner": redner}
                     )
 
+        # some tagesordnungspunkte don't contain speeches so they are removed here
         keys_to_remove = []
         for tagesordnungspunkt_key, tagesordnungspunkt_values in self.data[file_id][
             "inhalt"
@@ -115,6 +125,7 @@ class PlenarprotokollXMLParser:
 
         return self.data
 
+    # iterate through directory to append the data from each file present into one json file
     def crawl_directory(self, dir_path: str, out_path: str) -> None:
         pathlist = sorted(Path(dir_path).rglob("*.xml"))
 
