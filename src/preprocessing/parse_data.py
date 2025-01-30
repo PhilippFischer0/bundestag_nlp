@@ -9,7 +9,6 @@ class PlenarprotokollXMLParser:
 
     # due to the xml-files containing invisible and ambiguous characters they have to be removed
     def remove_bad_chars(self, text):
-        # TODO: improve this so ambiguous characters are gone, removes some spacing characters that should stay
         invisible_spaces_pattern = re.compile(r"[\u00A0]")
         invisible_pattern = re.compile(r"[\u202F]")
         bad_dashes_pattern = re.compile(r"[\u2013]")
