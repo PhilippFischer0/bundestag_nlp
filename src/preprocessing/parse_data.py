@@ -8,12 +8,20 @@ class PlenarprotokollXMLParser:
         self.data = dict()
 
     # due to the xml-files containing invisible and ambiguous characters they have to be removed
-    def remove_invisible_chars(self, text):
+    def remove_bad_chars(self, text):
         # TODO: improve this so ambiguous characters are gone, removes some spacing characters that should stay
-        invisible_chars_pattern = re.compile(r"[\u200B-\u200D\uFEFF\u00A0]")
-        cleaned_text = invisible_chars_pattern.sub("", text)
+        invisible_spaces_pattern = re.compile(r"[\u00A0]")
+        invisible_pattern = re.compile(r"[\u202F]")
+        bad_dashes_pattern = re.compile(r"[\u2013]")
+        bad_upper_quotation_pattern = re.compile(r"[\u201c]")
+        bad_lower_quotation_pattern = re.compile(r"[\u201e]")
 
-        return text
+        cleaned_text = invisible_spaces_pattern.sub(" ", text)
+        cleaned_text = invisible_pattern.sub("", cleaned_text)
+        cleaned_text = bad_dashes_pattern.sub("-", cleaned_text)
+        cleaned_text = bad_upper_quotation_pattern.sub("'", cleaned_text)
+        cleaned_text = bad_lower_quotation_pattern.sub("'", cleaned_text)
+        return cleaned_text
 
     def get_xml_content(self, file: str) -> dict:
         tree = ET.parse(file)
@@ -68,9 +76,7 @@ class PlenarprotokollXMLParser:
                         text_paragraph.attrib.get("klasse") == "redner"
                         or text_paragraph.tag == "kommentar"
                     ):
-                        rede_paragraph = [
-                            self.remove_invisible_chars(text_paragraph.text)
-                        ]
+                        rede_paragraph = [self.remove_bad_chars(text_paragraph.text)]
                         self.data[file_id]["inhalt"][tagesordnungspunkt_id][rede_id][
                             "text"
                         ].extend(rede_paragraph)
@@ -82,7 +88,7 @@ class PlenarprotokollXMLParser:
                             "kommentare"
                         ].append(
                             {
-                                comment_counter: self.remove_invisible_chars(
+                                comment_counter: self.remove_bad_chars(
                                     text_paragraph.text
                                 )
                             }
@@ -101,12 +107,10 @@ class PlenarprotokollXMLParser:
                     # iterate through the elements in the name element and add them to the redner dictionary
                     for element in name:
                         redner[str(element.tag)] = (
-                            self.remove_invisible_chars(element.text)
+                            self.remove_bad_chars(element.text)
                             if element.text is not None
                             # check if the redner has a role and if so adds it to the dict
-                            else self.remove_invisible_chars(
-                                element.find("rolle_lang").text
-                            )
+                            else self.remove_bad_chars(element.find("rolle_lang").text)
                         )
                     self.data[file_id]["inhalt"][tagesordnungspunkt_id][rede_id].update(
                         {"redner": redner}
