@@ -185,14 +185,18 @@ with open("data/out.json", "r") as file:
                         )
                     # iterate through all comments made in a speech and add them to the database
                     for kommentar in rede_values["kommentare"]:
+                        kommentar_key = int(list(kommentar.keys())[0])
+                        kommentar_values = kommentar[str(kommentar_key)]
                         cursor.execute(
                             """
-                            INSERT INTO kommentare (kommentar_index, text, rede_id)
-                            VALUES (?, ?, ?)
+                            INSERT INTO kommentare (kommentar_index, kommentator, fraktion, text, rede_id)
+                            VALUES (?, ?, ?, ?, ?)
                         """,
                             (
-                                int(list(kommentar.keys())[0]),
-                                list(kommentar.values())[0],
+                                kommentar_key,
+                                kommentar_values["commentator"],
+                                kommentar_values["fraktion"],
+                                kommentar_values["text"],
                                 rede_key,
                             ),
                         )

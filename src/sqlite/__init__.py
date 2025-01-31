@@ -38,6 +38,8 @@ sql_statements = [
     """CREATE TABLE IF NOT EXISTS kommentare(
             kommentar_id INTEGER PRIMARY KEY,
             kommentar_index INTEGER NOT NULL,
+            kommentator TEXT NOT NULL,
+            fraktion TEXT NOT NULL,
             text TEXT NOT NULL,
             rede_id TEXT NOT NULL,
             FOREIGN KEY (rede_id) REFERENCES reden (rede_id)
