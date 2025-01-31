@@ -12,15 +12,35 @@ class PlenarprotokollXMLParser:
         invisible_spaces_pattern = re.compile(r"[\u00A0]")
         invisible_pattern = re.compile(r"[\u202F]")
         bad_dashes_pattern = re.compile(r"[\u2013]")
-        bad_upper_quotation_pattern = re.compile(r"[\u201c]")
-        bad_lower_quotation_pattern = re.compile(r"[\u201e]")
+        bad_quotation_pattern = re.compile(r"[\u201c\u201e]")
 
         cleaned_text = invisible_spaces_pattern.sub(" ", text)
         cleaned_text = invisible_pattern.sub("", cleaned_text)
         cleaned_text = bad_dashes_pattern.sub("-", cleaned_text)
-        cleaned_text = bad_upper_quotation_pattern.sub("'", cleaned_text)
-        cleaned_text = bad_lower_quotation_pattern.sub("'", cleaned_text)
+        cleaned_text = bad_quotation_pattern.sub("'", cleaned_text)
+
         return cleaned_text
+
+    def extract_spoken_comments(self, comment: str):
+        pattern = re.compile(
+            r"([A-Za-zäöüÄÖÜßğ\.\s]+) \[([A-Za-z0-9äöüÄÖÜß\s/]+)\]: (.+)"
+        )
+        segments = comment.split("-")
+        extracted_info = []
+        for segment in segments:
+            matches = pattern.findall(segment)
+            for match in matches:
+                person, party, text = match
+                if text.endswith(")"):
+                    text = text[:-1].strip()
+                extracted_info.append(
+                    {
+                        "commentator": person.strip(),
+                        "fraktion": party.strip(),
+                        "text": text.strip(),
+                    }
+                )
+        return extracted_info
 
     def get_xml_content(self, file: str) -> dict:
         tree = ET.parse(file)
@@ -82,16 +102,13 @@ class PlenarprotokollXMLParser:
 
                     # else check if it is a comment, if so add it to the list of comments
                     elif text_paragraph.tag == "kommentar":
-                        comment_counter += 1
-                        self.data[file_id]["inhalt"][tagesordnungspunkt_id][rede_id][
-                            "kommentare"
-                        ].append(
-                            {
-                                comment_counter: self.remove_bad_chars(
-                                    text_paragraph.text
-                                )
-                            }
-                        )
+                        text_paragraph = self.remove_bad_chars(text_paragraph.text)
+                        comments = self.extract_spoken_comments(text_paragraph)
+                        for comment in comments:
+                            comment_counter += 1
+                            self.data[file_id]["inhalt"][tagesordnungspunkt_id][
+                                rede_id
+                            ]["kommentare"].append({comment_counter: comment})
 
                 # extract the redner element from the relevant paragraph
                 if rede.find("p").attrib.get("klasse") == "redner":
