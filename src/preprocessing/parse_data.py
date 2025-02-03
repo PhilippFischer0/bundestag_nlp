@@ -96,10 +96,13 @@ class PlenarprotokollXMLParser:
                         text_paragraph.attrib.get("klasse") == "redner"
                         or text_paragraph.tag == "kommentar"
                     ):
-                        rede_paragraph = [self.remove_bad_chars(text_paragraph.text)]
-                        self.data[file_id]["inhalt"][tagesordnungspunkt_id][rede_id][
-                            "text"
-                        ].extend(rede_paragraph)
+                        if text_paragraph.text is not None:
+                            rede_paragraph = [
+                                self.remove_bad_chars(text_paragraph.text)
+                            ]
+                            self.data[file_id]["inhalt"][tagesordnungspunkt_id][
+                                rede_id
+                            ]["text"].extend(rede_paragraph)
 
                     # else check if it is a comment, if so add it to the list of comments
                     elif text_paragraph.tag == "kommentar":
