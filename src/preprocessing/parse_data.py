@@ -156,6 +156,6 @@ class PlenarprotokollXMLParser:
             json.dump(self.data, file, indent=4, ensure_ascii=False)
 
 
-test = PlenarprotokollXMLParser()
+parser = PlenarprotokollXMLParser()
 
-test.crawl_directory("data/xml/", "data/out.json")
+parser.crawl_directory("data/xml/", "data/out.json")
