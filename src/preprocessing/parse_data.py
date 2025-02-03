@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 import json, re
 from pathlib import Path
+import os
 
 
 class PlenarprotokollXMLParser:
@@ -8,7 +9,7 @@ class PlenarprotokollXMLParser:
         self.data = dict()
 
     # due to the xml-files containing invisible and ambiguous characters they have to be removed
-    def remove_bad_chars(self, text):
+    def remove_bad_chars(self, text: str) -> str:
         invisible_spaces_pattern = re.compile(r"[\u00A0]")
         invisible_pattern = re.compile(r"[\u202F]")
         bad_dashes_pattern = re.compile(r"[\u2013]")
@@ -21,7 +22,7 @@ class PlenarprotokollXMLParser:
 
         return cleaned_text
 
-    def extract_spoken_comments(self, comment: str):
+    def extract_spoken_comments(self, comment: str) -> list[dict]:
         pattern = re.compile(
             r"([A-Za-zäöüÄÖÜßğ\.\s]+) \[([A-Za-z0-9äöüÄÖÜß\s/]+)\]: (.+)"
         )
@@ -42,8 +43,8 @@ class PlenarprotokollXMLParser:
                 )
         return extracted_info
 
-    def get_xml_content(self, file: str) -> dict:
-        tree = ET.parse(file)
+    def get_xml_content(self, file_path: str) -> dict:
+        tree = ET.parse(file_path)
         root = tree.getroot()
 
         # get the filename attributes from the root element and add as key in dictionary
@@ -146,16 +147,11 @@ class PlenarprotokollXMLParser:
         return self.data
 
     # iterate through directory to append the data from each file present into one json file
-    def crawl_directory(self, dir_path: str, out_path: str) -> None:
-        pathlist = sorted(Path(dir_path).rglob("*.xml"))
+    def crawl_directory(self) -> None:
+        pathlist = sorted(Path(os.getenv("XML_PATH")).rglob("*.xml"))
 
         for path in pathlist:
             self.data.update(self.get_xml_content(path))
 
-        with open(out_path, "a") as file:
+        with open(os.getenv("JSON_FILEPATH"), "a") as file:
             json.dump(self.data, file, indent=4, ensure_ascii=False)
-
-
-parser = PlenarprotokollXMLParser()
-
-parser.crawl_directory("data/xml/", "data/out.json")

@@ -1,7 +1,8 @@
 import sqlite3, json
+import os
 
 
-def extract_unique_redner(file_path):
+def extract_unique_redner(file_path: str) -> list[dict]:
     # recursively iterate through the json file to extract all unique redner dictionaries
     with open(file_path, "r", encoding="utf-8") as file:
         data = json.load(file)
@@ -25,7 +26,7 @@ def extract_unique_redner(file_path):
     return list(unique_redner.values())
 
 
-def extract_unique_rollen(unique_redner_list: json):
+def extract_unique_rollen(unique_redner_list: json) -> tuple[dict, dict]:
     # iterate through all unique speakers to extract all roles present
     unique_rollen = {}
     rollen_map = {}
@@ -43,15 +44,15 @@ def extract_unique_rollen(unique_redner_list: json):
     return unique_rollen, rollen_map
 
 
-if __name__ == "__main__":
-    unique_redner_list = extract_unique_redner("data/out.json")
+def load_data_into_db() -> None:
+    unique_redner_list = extract_unique_redner(os.getenv("JSON_FILEPATH"))
     rollen, r_map = extract_unique_rollen(unique_redner_list)
 
     # load file data
-    with open("data/out.json", "r") as file:
+    with open(os.getenv("JSON_FILEPATH"), "r") as file:
         data = json.load(file)
         # connect to the database and initialize cursor to execute SQL statements
-        with sqlite3.connect("data/data.db") as conn:
+        with sqlite3.connect(os.getenv("DATABASE_FILEPATH")) as conn:
             cursor = conn.cursor()
 
             # iterate through the roles and add them to the relevant table
