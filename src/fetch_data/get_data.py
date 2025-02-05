@@ -1,12 +1,11 @@
-import requests
-
-from bs4 import BeautifulSoup
 import os
-import time
+import requests
+from bs4 import BeautifulSoup
 import re
+import time
 
 
-def scrape_data() -> None:
+def scrape_data(output_directory_path: str) -> None:
 
     url = "https://www.bundestag.de/ajax/filterlist/de/services/opendata/866354-866354"
 
@@ -34,7 +33,7 @@ def scrape_data() -> None:
                 xml_file_name = href.split("/")[-1]
 
                 with open(
-                    os.path.join(os.getenv("XML_PATH"), xml_file_name), "wb"
+                    os.path.join(output_directory_path, xml_file_name), "wb"
                 ) as xml_file:
                     xml_file.write(xml_response.content)
 

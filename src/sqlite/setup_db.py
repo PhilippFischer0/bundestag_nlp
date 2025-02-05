@@ -1,5 +1,4 @@
 import sqlite3
-import os
 
 # SQL statements to initialize the database tables
 sql_statements = [
@@ -48,10 +47,10 @@ sql_statements = [
 ]
 
 
-def setup_database() -> None:
+def setup_database(database_path: str) -> None:
     try:
         # connect to and create database
-        with sqlite3.connect(os.getenv("DATABASE_FILEPATH")) as conn:
+        with sqlite3.connect(database_path) as conn:
             print("database created")
 
         try:
