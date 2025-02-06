@@ -42,7 +42,8 @@ sql_statements = [
             fraktion TEXT NOT NULL,
             text TEXT NOT NULL,
             rede_id TEXT NOT NULL,
-            FOREIGN KEY (rede_id) REFERENCES reden (rede_id)
+            FOREIGN KEY (rede_id) REFERENCES reden (rede_id),
+            UNIQUE (kommentar_index, rede_id)
         );""",
 ]
 
