@@ -136,7 +136,6 @@ class PlenarprotokollXMLParser:
                     for element in name:
                         # check if the redner has a role and if so adds it to the dict
                         if element.tag == "rolle":
-                            # TODO: some roles still have whitespace in them, needs to be removed
                             rollen_element = element.find("rolle_lang").text
                             rollen_element = re.compile(r"\n").sub(" ", rollen_element)
                             rollen_element = re.compile(r" +").sub(" ", rollen_element)
