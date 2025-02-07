@@ -1,15 +1,17 @@
 import os
-import requests
-from bs4 import BeautifulSoup
 import re
 import time
+from http import HTTPStatus
+
+import requests
+from bs4 import BeautifulSoup
 
 
 def scrape_data(output_directory_path: str) -> None:
 
     url = "https://www.bundestag.de/ajax/filterlist/de/services/opendata/866354-866354"
 
-    payload = {
+    params = {
         "limit": 10,
         "FilterSet": "true",
         "offset": 0,
@@ -17,14 +19,14 @@ def scrape_data(output_directory_path: str) -> None:
 
     # get maximum number of XML Documents
     data_hits = int(
-        BeautifulSoup(requests.get(url=url, params=payload)._content, "html.parser")
+        BeautifulSoup(requests.get(url=url, params=params)._content, "html.parser")
         .find("div", class_="meta-slider")
         .get("data-hits")
     )
 
-    while payload["offset"] < data_hits:
-        response = requests.get(url=url, params=payload)
-        if response.status_code == 200:
+    while params["offset"] < data_hits:
+        response = requests.get(url=url, params=params)
+        if response.status_code == HTTPStatus.OK:
             soup = BeautifulSoup(response.content, "html.parser")
             for link in soup.find_all("a", attrs={"title": re.compile("^XML")}):
 
@@ -39,4 +41,4 @@ def scrape_data(output_directory_path: str) -> None:
 
                 time.sleep(5)
 
-            payload["offset"] += 10
+            params["offset"] += 10
