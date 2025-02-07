@@ -1,8 +1,8 @@
-import xml.etree.ElementTree as ET
 import json
-from pathlib import Path
 import os
 import re
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
 
 class PlenarprotokollXMLParser:

@@ -1,6 +1,6 @@
 import os
-from src.fetch_data.get_data import scrape_data
 
+from src.fetch_data.get_data import scrape_data
 
 if __name__ == "__main":
     if not os.path.exists("data/") and not os.path.isdir("data/"):

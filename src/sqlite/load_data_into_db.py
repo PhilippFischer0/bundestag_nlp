@@ -1,5 +1,6 @@
-import sqlite3, json
+import json
 import os
+import sqlite3
 
 
 def load_data_into_db(json_directory_path: str, database_path: str) -> None:
