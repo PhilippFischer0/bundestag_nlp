@@ -1,55 +1,75 @@
-import nltk, json
-from nltk.tokenize import word_tokenize, sent_tokenize
+import sqlite3
+import spacy
+import de_core_news_sm
+from collections import Counter
+from tqdm.notebook import tqdm
 
 
 class DataAnalyzer:
-    def __init__(self, data_path: str):
-        with open(data_path, "r", encoding="utf-8") as file:
-            self.data = json.load(file)
+    def __init__(self, database_path: str):
+        self.database_path = database_path
+        self.nlp = de_core_news_sm.load()
 
-    def extract_paragraphs(self, data: dict | list, key: str):
-        paragraphs = []
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if key == key and isinstance(value, str):
-                    paragraphs.append(value)
-                else:
-                    paragraphs.extend(self.extract_paragraphs(value))
-        elif isinstance(data, list):
-            for item in data:
-                paragraphs.extend(self.extract_paragraphs(item))
+    def connect_db(func):
+        def inner(self):
+            with sqlite3.connect(self.database_path) as conn:
+                cursor = conn.cursor()
+                return func(self, cursor)
 
-        return paragraphs
+        return inner
 
-    def tokenize_words(self, key: str):
-        paragraphs = self.extract_paragraphs(self.data, key)
+    @connect_db
+    def get_reden(self, cursor) -> list:
+        reden = []
+        reden_cursor = cursor.execute(
+            """
+            SELECT ALL text FROM reden;
+            """
+        )
+        for row in reden_cursor:
+            # index 0 because each row contains a tuple with one element
+            reden.append(row[0])
+        return reden
+
+    @connect_db
+    def get_reden_with_id(self, cursor) -> dict:
+        reden = {}
+        reden_cursor = cursor.execute(
+            """
+            SELECT ALL rede_id, text FROM reden;
+            """
+        )
+        for row in reden_cursor:
+            reden[row[0]] = row[1]
+
+    def tokenize_words(self, reden: list) -> dict:
         tokens = []
-        for paragraph in paragraphs:
-            sentences = sent_tokenize(paragraph)
-            for sentence in sentences:
-                words = word_tokenize(sentence)
-                tokens.extend(words)
+        # tqdm wrapper
+        for doc in tqdm(
+            self.nlp.pipe(reden, disable=["ner", "tagging"]), desc="Tokenizing"
+        ):
+            for token in doc:
+                if not token.is_stop and not token.is_punct:
+                    tokens.append(token)
+
         return tokens
 
-    def word_frequency_dist(self, tokens: list):
-        word_frequency = nltk.FreqDist(tokens)
+    def get_word_frequency(self, tokens: list) -> dict:
+        word_freq = Counter()
+        word_freq = (
+            Counter(
+                token.text.lower()
+                for token in tokens
+                if token.is_alpha and not token.is_stop
+            )
+            + word_freq
+        )
+        return dict(word_freq.most_common())
 
-        # TODO: remove stopwords
-        return word_frequency
-
-    def num_comments_per_speaker(self, data: dict | list, target_redner: str):
-        comments = 0
-        if isinstance(data, dict):
-            for key, value in data.items():
-                comments += self.num_comments_per_speaker(value, target_redner)
-        elif isinstance(data, list):
-            for item in data:
-                if item.get("redner") == target_redner:
-                    for item in data:
-                        if list(item.keys())[0] == "kommentar":
-                            comments += 1
-                else:
-                    for key, value in item.items():
-                        comments += self.num_comments_per_speaker(value, target_redner)
-
-        return comments
+    def get_words_per_rede(self) -> dict:
+        count_dict = {}
+        reden_dict = self.get_reden_with_id()
+        for key, value in reden_dict.items():
+            tokens = self.tokenize_words(value)
+            count_dict["key"] = len(tokens)
+        return count_dict
