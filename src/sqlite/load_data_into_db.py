@@ -1,14 +1,21 @@
-import sqlite3, json
+import json
 import os
+import sqlite3
 
 
 def load_data_into_db(json_directory_path: str, database_path: str) -> None:
     # load file data
-    with open(os.path.join(json_directory_path, "data.json"), "r") as file:
+    with open(
+        os.path.join(json_directory_path, "data.json"), "rt", encoding="utf-8"
+    ) as file:
         data = json.load(file)
-    with open(os.path.join(json_directory_path, "redner.json"), "r") as file:
+    with open(
+        os.path.join(json_directory_path, "redner.json"), "rt", encoding="utf-8"
+    ) as file:
         redner = json.load(file)
-    with open(os.path.join(json_directory_path, "rollen.json"), "r") as file:
+    with open(
+        os.path.join(json_directory_path, "rollen.json"), "rt", encoding="utf-8"
+    ) as file:
         rollen = json.load(file)
         # connect to the database and initialize cursor to execute SQL statements
         with sqlite3.connect(database_path) as conn:
@@ -26,62 +33,19 @@ def load_data_into_db(json_directory_path: str, database_path: str) -> None:
 
             # iterate through unique_redner_list and add each item to the redner table
             for redner_key, redner_value in redner.items():
-                # case 1 of 4 -> redner has a title and a fraktion
-                if "titel" in redner_value and "fraktion" in redner_value:
-                    cursor.execute(
-                        """
-                        INSERT INTO redner (redner_id, titel, vorname, nachname, fraktion)
-                        VALUES (?, ?, ?, ?, ?)
-                    """,
-                        (
-                            int(redner_key),
-                            redner_value["titel"],
-                            redner_value["vorname"],
-                            redner_value["nachname"],
-                            redner_value["fraktion"],
-                        ),
-                    )
-                # case 2 of 4 -> redner has a title but no fraktion
-                elif "titel" in redner_value and not "fraktion" in redner_value:
-                    cursor.execute(
-                        """
-                        INSERT INTO redner (redner_id, titel, vorname, nachname)
-                        VALUES (?, ?, ?, ?)
-                    """,
-                        (
-                            int(redner_key),
-                            redner_value["titel"],
-                            redner_value["vorname"],
-                            redner_value["nachname"],
-                        ),
-                    )
-                # case 3 of 4 -> redner has a fraktion but no title
-                elif "fraktion" in redner_value and not "titel" in redner_value:
-                    cursor.execute(
-                        """
-                        INSERT INTO redner (redner_id, vorname, nachname, fraktion)
-                        VALUES (?, ?, ?, ?)
-                    """,
-                        (
-                            int(redner_key),
-                            redner_value["vorname"],
-                            redner_value["nachname"],
-                            redner_value["fraktion"],
-                        ),
-                    )
-                # case 4 of 4 -> redner has neither a title nor a fraktion
-                else:
-                    cursor.execute(
-                        """
-                        INSERT INTO redner (redner_id, vorname, nachname)
-                        VALUES (?, ?, ?)
-                    """,
-                        (
-                            int(redner_key),
-                            redner_value["vorname"],
-                            redner_value["nachname"],
-                        ),
-                    )
+                cursor.execute(
+                    """
+                    INSERT INTO redner (redner_id, titel, vorname, nachname, fraktion)
+                    VALUES (?, ?, ?, ?, ?)
+                """,
+                    (
+                        int(redner_key),
+                        redner_value.get("titel"),
+                        redner_value["vorname"],
+                        redner_value["nachname"],
+                        redner_value.get("fraktion"),
+                    ),
+                )
 
             # iterate through the sitzungen and add the relevant metadata to the database
             for sitzungs_key, sitzungs_dict in data.items():
@@ -114,45 +78,30 @@ def load_data_into_db(json_directory_path: str, database_path: str) -> None:
 
                     # iterate through all reden in each tagesordnungspunkt and add the foreign key to it, the speaker and their role if they have one
                     for rede_key, rede_values in tagesordnungspunkt_dict.items():
-                        if "rolle" in rede_values["reference"]:
-                            cursor.execute(
-                                """
-                                INSERT INTO reden (rede_id, text, redner_id, tagesordnungspunkt_id, rollen_id)
-                                VALUES (?, ?, ?, ?, ?)
-                            """,
-                                (
-                                    rede_key,
-                                    "\n".join(rede_values["text"]),
-                                    rede_values["reference"]["redner"],
-                                    tagesordnungspunkt_id,
-                                    rede_values["reference"]["rolle"],
-                                ),
-                            )
-                        # in case the speaker doesn't have a role
-                        else:
-                            cursor.execute(
-                                """
-                                INSERT INTO reden (rede_id, text, redner_id, tagesordnungspunkt_id)
-                                VALUES (?, ?, ?, ?)
-                            """,
-                                (
-                                    rede_key,
-                                    "\n".join(rede_values["text"]),
-                                    int(rede_values["reference"]["redner"]),
-                                    tagesordnungspunkt_id,
-                                ),
-                            )
-                        # iterate through all comments made in a speech and add them to the database
-                        for kommentar in rede_values.get("kommentare", []):
-                            kommentar_key = int(list(kommentar.keys())[0])
-                            kommentar_values = kommentar[str(kommentar_key)]
+                        # if "rolle" in rede_values["reference"]:
+                        cursor.execute(
+                            """
+                            INSERT INTO reden (rede_id, text, redner_id, tagesordnungspunkt_id, rollen_id)
+                            VALUES (?, ?, ?, ?, ?)
+                        """,
+                            (
+                                rede_key,
+                                "\n".join(rede_values["text"]),
+                                rede_values["reference"]["redner"],
+                                tagesordnungspunkt_id,
+                                rede_values["reference"].get("rolle"),
+                            ),
+                        )
+                        for kommentar_key, kommentar_values in rede_values.get(
+                            "kommentare", {}
+                        ).items():
                             cursor.execute(
                                 """
                                 INSERT INTO kommentare (kommentar_index, kommentator, fraktion, text, rede_id)
                                 VALUES (?, ?, ?, ?, ?)
                             """,
                                 (
-                                    kommentar_key,
+                                    int(kommentar_key),
                                     kommentar_values["commentator"],
                                     kommentar_values["fraktion"],
                                     kommentar_values["text"],
