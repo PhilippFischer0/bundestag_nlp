@@ -95,7 +95,7 @@ class PlenarprotokollXMLParser:
                     if not (
                         text_paragraph.attrib.get("klasse") == "redner"
                         or text_paragraph.tag == "kommentar"
-                        and text_paragraph.text is not None
+                        or text_paragraph.text is None
                     ):
                         # TODO: <name> Elemente + nachfolgende Rede aus Text parsen
                         rede_paragraph = self.remove_bad_chars(text_paragraph.text)
