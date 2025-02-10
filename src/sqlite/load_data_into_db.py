@@ -5,11 +5,17 @@ import sqlite3
 
 def load_data_into_db(json_directory_path: str, database_path: str) -> None:
     # load file data
-    with open(os.path.join(json_directory_path, "data.json"), "r") as file:
+    with open(
+        os.path.join(json_directory_path, "data.json"), "rt", encoding="utf-8"
+    ) as file:
         data = json.load(file)
-    with open(os.path.join(json_directory_path, "redner.json"), "r") as file:
+    with open(
+        os.path.join(json_directory_path, "redner.json"), "rt", encoding="utf-8"
+    ) as file:
         redner = json.load(file)
-    with open(os.path.join(json_directory_path, "rollen.json"), "r") as file:
+    with open(
+        os.path.join(json_directory_path, "rollen.json"), "rt", encoding="utf-8"
+    ) as file:
         rollen = json.load(file)
         # connect to the database and initialize cursor to execute SQL statements
         with sqlite3.connect(database_path) as conn:
