@@ -41,12 +41,15 @@ class DataAnalyzer:
         )
         for row in reden_cursor:
             reden[row[0]] = row[1]
+        return reden
 
     def tokenize_words(self, reden: list) -> dict:
         tokens = []
         # tqdm wrapper
         for doc in tqdm(
-            self.nlp.pipe(reden, disable=["ner", "tagging"]), desc="Tokenizing"
+            self.nlp.pipe(reden, disable=["ner", "tagger"]),
+            desc="Tokenizing",
+            total=len(reden),
         ):
             for token in doc:
                 if not token.is_stop and not token.is_punct:
@@ -69,7 +72,30 @@ class DataAnalyzer:
     def get_words_per_rede(self) -> dict:
         count_dict = {}
         reden_dict = self.get_reden_with_id()
-        for key, value in reden_dict.items():
-            tokens = self.tokenize_words(value)
-            count_dict["key"] = len(tokens)
+        for key, value in tqdm(reden_dict.items(), desc="Counting words"):
+            doc = self.nlp(value)
+            tokens = [
+                token for token in doc if not token.is_space and not token.is_punct
+            ]
+            count_dict[key] = len(list(tokens))
         return count_dict
+
+    @connect_db
+    def count_reden_per_date(self, cursor) -> dict:
+        reden = {}
+        reden_cursor = cursor.execute(
+            """
+            SELECT ALL r.rede_id, s.datum FROM reden as r 
+            JOIN tagesordnungspunkte AS t
+            ON r.tagesordnungspunkt_id = t.tagesordnungspunkt_id
+            JOIN sitzungen AS s
+            ON t.sitzungs_id = s.sitzungs_id
+            """
+        )
+        for row in reden_cursor:
+            _, datum = row
+            if datum not in reden:
+                reden[datum] = 1
+            else:
+                reden[datum] += 1
+        return reden
