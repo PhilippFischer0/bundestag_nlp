@@ -19,6 +19,7 @@ ipywidgets = "^8.1.5"
 jupyter = "^1.1.1"
 plotly = "^6.0.0"
 beautifulsoup4 = "^4.13.3"
+wordcloud = "^1.9.4"
 
 [tool.poetry.group.dev.dependencies]
 black = {extras = ["jupyter"], version = "^24.10.0"}
@@ -26,6 +27,16 @@ isort = "^6.0.0"
 
 [tool.black]
 line-length = 88
+
+[tool.pylint]
+disable = [
+    "C0114",  # Missing module docstring
+    "C0115",  # Missing class docstring
+    "C0116",  # Missing function or method docstring
+    "C0301",  # line too long
+    "W0511",  # fixme Warning
+]
+max-line-length = 88
 
 [build-system]
 requires = ["poetry-core"]
