@@ -20,6 +20,12 @@ jupyter = "^1.1.1"
 plotly = "^6.0.0"
 beautifulsoup4 = "^4.13.3"
 wordcloud = "^1.9.4"
+germansentiment = "^1.1.0"
+torch = "^2.6.0"
+transformers = "^4.49.0"
+protobuf = "^5.29.3"
+tiktoken = "^0.9.0"
+sentencepiece = "^0.2.0"
 
 [tool.poetry.group.dev.dependencies]
 black = {extras = ["jupyter"], version = "^24.10.0"}
