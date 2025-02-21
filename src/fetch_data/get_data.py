@@ -19,19 +19,21 @@ def scrape_data(output_directory_path: str) -> None:
 
     # get maximum number of XML Documents
     data_hits = int(
-        BeautifulSoup(requests.get(url=url, params=params)._content, "html.parser")
+        BeautifulSoup(
+            requests.get(url=url, params=params, timeout=5).content, "html.parser"
+        )
         .find("div", class_="meta-slider")
         .get("data-hits")
     )
 
     while params["offset"] < data_hits:
-        response = requests.get(url=url, params=params)
+        response = requests.get(url=url, params=params, timeout=5)
         if response.status_code == HTTPStatus.OK:
             soup = BeautifulSoup(response.content, "html.parser")
             for link in soup.find_all("a", attrs={"title": re.compile("^XML")}):
 
                 href = link.get("href")
-                xml_response = requests.get(href)
+                xml_response = requests.get(href, timeout=5)
                 xml_file_name = href.split("/")[-1]
 
                 with open(
