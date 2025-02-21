@@ -3,6 +3,7 @@ import os
 import re
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 
@@ -29,19 +30,25 @@ class PlenarprotokollXMLParser:
 
     def extract_spoken_comments(self, comment: str) -> list[dict]:
         pattern = re.compile(
-            r"([A-Za-zäöüÄÖÜßğ\.\s]+) \[([A-Za-z0-9äöüÄÖÜß\s/]+)\]: (.+)"
+            r"([A-Za-zäöüÄÖÜßğéă\.\-\s]+) \[([A-Za-z0-9äöüÄÖÜß\s/]+)\]: (.+)"
         )
-        segments = comment.split("-")
+        segments = re.split(r" -|- ", comment)
         extracted_info = []
         for segment in segments:
             matches = pattern.findall(segment)
             for match in matches:
                 person, party, text = match
+                if "Abg." in person:
+                    person = "".join(person.split("Abg.")[1:])
+                if person.startswith(" und"):
+                    person = person.replace(" und", "", 1)
+                if party == "BÜNDNIS 90/DIE GRÜNE":
+                    party = "BÜNDNIS 90/DIE GRÜNEN"
                 text = text.rstrip(")")
                 extracted_info.append(
                     {
                         "commentator": person.strip(),
-                        "fraktion": party.strip(),
+                        "fraktion": re.sub(r"\s+", " ", party).upper().strip(),
                         "text": text.strip(),
                     }
                 )
@@ -60,6 +67,7 @@ class PlenarprotokollXMLParser:
         # get metadata of the sitzung and add the to the metadata dict
         veranstaltungsdaten = root.find("vorspann/kopfdaten/veranstaltungsdaten")
         date = veranstaltungsdaten.find("datum").attrib.get("date")
+        date = datetime.strptime(date, "%d.%m.%Y").strftime("%Y-%m-%d")
 
         sitzung = root.find("sitzungsverlauf")
         sitzungsbeginn = sitzung.find("sitzungsbeginn").attrib.get(
@@ -148,11 +156,15 @@ class PlenarprotokollXMLParser:
                                     self.rollen_counter
                                 )
                                 self.rollen_counter += 1
+                        elif element.tag == "fraktion":
+                            redner[str(element.tag)] = self.remove_bad_chars(
+                                element.text.upper()
+                            )
                         else:
                             redner[str(element.tag)] = self.remove_bad_chars(
                                 element.text
                             )
-                    if redner_id not in self.redner.keys():
+                    if redner_id not in self.redner:
                         self.redner[redner_id] = redner
 
                 reference_dict["reference"]["redner"] = redner_id
