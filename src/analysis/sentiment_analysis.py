@@ -1,6 +1,7 @@
 import os
 import re
 
+import de_core_news_sm
 import torch
 from germansentiment import SentimentModel
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -9,6 +10,10 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 class HuggingFaceSentimentAnalyzer:
 
     def __init__(self):
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        else:
+            self.device = "cpu"
         self.model = AutoModelForSequenceClassification.from_pretrained(
             "ssary/XLM-RoBERTa-German-sentiment"
         )
@@ -16,22 +21,31 @@ class HuggingFaceSentimentAnalyzer:
             "ssary/XLM-RoBERTa-German-sentiment"
         )
 
-    def analyze_sentence(self, sentence: str):
-        inputs = self.tokenizer(
-            sentence, return_tensors="pt", truncation=True, max_length=512
-        )
+    def predict_sentiment(self, text: list[str]):
+        inputs = self.tokenizer.batch_encode_plus(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            add_special_tokens=True,
+            max_length=512,
+        ).to(self.device)
         with torch.no_grad():
             outputs = self.model(**inputs)
         predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
+        print(predictions)
         sentiment_classes = ["negative", "neutral", "positive"]
 
-        return sentiment_classes[predictions.argmax()]
+        return [sentiment_classes[prediction.argmax()] for prediction in predictions]
 
-    def analyze_sentence_list(self, sentences: list) -> list:
+    def analyze_sentence_list(self, sentences: list | str, batch_size: int) -> list:
+        if isinstance(sentences, str):
+            return self.predict_sentiment([sentences])
+
         sentiments = []
-        for sentence in sentences:
-            sentiment = self.analyze_sentence(sentence)
-            sentiments.append(sentiment)
+        for i in range(0, len(sentences), batch_size):
+            batch = sentences[i : i + batch_size]
+            batch_sentiments = self.predict_sentiment(batch)
+            sentiments.extend(batch_sentiments)
 
         return sentiments
 
@@ -41,67 +55,75 @@ class GermanSentimentAnalyzer:
     def __init__(self):
         self.model = SentimentModel()
 
-    def analyze_sentences(self, sentences: list | str) -> list:
+    def analyze_sentence_list(self, sentences: list | str, batch_size: int) -> list:
         if isinstance(sentences, str):
             return self.model.predict_sentiment([sentences])
 
-        return self.model.predict_sentiment(sentences)
+        sentiments = []
+        for i in range(0, len(sentences), batch_size):
+            batch = sentences[i : i + batch_size]
+            batch_sentiments = self.model.predict_sentiment(batch)
+            sentiments.extend(batch_sentiments)
+        return sentiments
 
 
 class LookupSentimentAnalyzer:
 
     def __init__(self, dir_path: str):
-        self.positive = self.parse_sentiment_file(
-            os.path.join(dir_path, "SentiWS_v1.8c_Positive.txt")
+        self.sentiment = self.parse_sentiment_files(
+            os.path.join(dir_path, "SentiWS_v1.8c_Positive.txt"),
+            os.path.join(dir_path, "SentiWS_v1.8c_Negative.txt"),
         )
-        self.negative = self.parse_sentiment_file(
-            os.path.join(dir_path, "SentiWS_v1.8c_Negative.txt")
-        )
+        self.nlp = de_core_news_sm.load()
 
-    def parse_sentiment_file(self, file_path: str) -> dict:
+    def parse_sentiment_files(
+        self, positive_file_path: str, negative_file_path: str
+    ) -> dict:
         sentiment_dict = {}
-        with open(file_path, "rt", encoding="utf-8") as file:
-            for line in file:
-                parts = line.split("|")
-                if len(parts) > 1:
-                    word_info = parts[1].split(maxsplit=2)
-                    if len(word_info) > 2:
-                        word, score, alternatives = (
-                            parts[0],
-                            word_info[1],
-                            re.sub(r"\s", "", word_info[2]).split(","),
-                        )
-                    else:
-                        word, score, alternatives = parts[0], word_info[1], []
+        for file_path in [positive_file_path, negative_file_path]:
+            with open(file_path, "rt", encoding="utf-8") as file:
+                for line in file:
+                    parts = line.split("|")
+                    if len(parts) > 1:
+                        word_info = parts[1].split(maxsplit=2)
+                        if len(word_info) > 2:
+                            word, score, alternatives = (
+                                parts[0],
+                                word_info[1],
+                                re.sub(r"\s", "", word_info[2]).split(","),
+                            )
+                        else:
+                            word, score, alternatives = parts[0], word_info[1], []
 
-                    sentiment_dict[word] = score
-                    for alt in alternatives:
-                        if alt:
-                            sentiment_dict[alt] = score
-
+                        sentiment_dict[word] = float(score)
+                        for alt in alternatives:
+                            if alt:
+                                sentiment_dict[alt] = float(score)
         return sentiment_dict
 
     def analyze_sentence(self, sentence: str) -> float:
         score = 0.0
-        words = re.sub(r"[^\w\s]", "", sentence).split()
+        words = []
+        doc = self.nlp(sentence)
+        for token in doc:
+            if token.is_alpha:
+                words.append(token.text)
         num_words = len(words)
         found_words = 0
         for word in words:
-            if word in self.negative:
+            if word in self.sentiment:
                 found_words += 1
-                score += float(self.negative[word])
-            elif word in self.positive:
-                found_words += 1
-                score += float(self.positive[word])
+                score += self.sentiment[word]
+            # score += self.sentiment.get(word, 0.0)
 
-        score = score * (found_words / num_words)
+        score = score * (found_words / num_words) / num_words
 
-        return round(score, 4)
+        return score
 
-    def analyze_sentence_list(self, sentences: list) -> list:
+    def analyze_sentence_list(self, sentences: list, _: int) -> list:
         sentiments = []
         for sentence in sentences:
             sentiment = self.analyze_sentence(sentence)
             sentiments.append(sentiment)
 
-        return sentiments
+        return sum(sentiments)
