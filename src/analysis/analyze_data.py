@@ -1,14 +1,20 @@
 import sqlite3
 from collections import Counter
+from typing import Literal
 
 import de_core_news_sm
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from plotly.graph_objects import Figure
 from plotly.subplots import make_subplots
 from tqdm.autonotebook import tqdm
 from wordcloud import WordCloud
+
+from src.analysis.sentiment_analysis import (
+    GermanSentimentAnalyzer,
+    HuggingFaceSentimentAnalyzer,
+    LookupSentimentAnalyzer,
+)
 
 
 def connect_db(func):
@@ -70,6 +76,42 @@ class DataAnalyzer:
 
         return sentences
 
+    @connect_db
+    def tokenize_sentences_per_rede(self, cursor: sqlite3.Cursor) -> dict:
+        reden_ids = []
+        reden = []
+        sentences = dict()
+        reden_cursor = cursor.execute(
+            """
+            SELECT ALL rede_id, text FROM reden;
+            """
+        )
+        for row in reden_cursor:
+            reden_ids.append(row[0])
+            reden.append(row[1])
+
+        for i, doc in tqdm(
+            enumerate(
+                self.nlp.pipe(
+                    reden,
+                    disable=[
+                        "lemmatizer",
+                        "ner",
+                        "tagger",
+                    ],
+                    n_process=2,
+                )
+            ),
+            desc="Tokenizing sentences",
+            total=len(reden),
+        ):
+            sents = []
+            for sent in doc.sents:
+                sents.append(sent.text)
+            sentences[reden_ids[i]] = sents
+
+        return sentences
+
     def tokenize_words(self, reden: list) -> list:
         tokens = []
         for doc in tqdm(
@@ -98,6 +140,8 @@ class DataAnalyzer:
         return tokens
 
     def tokenize_nouns(self, sentences: list) -> list:
+        with open("data/filter/anreden.txt", "rt", encoding="utf-8") as file:
+            anreden = file.read().split(",")
         tokens = []
         for doc in tqdm(
             self.nlp.pipe(
@@ -117,15 +161,37 @@ class DataAnalyzer:
                     and token.ent_iob_ == "O"
                     and token.pos_ == "NOUN"
                     and not token.is_stop
+                    and not token.text.lower() in anreden
                 ):
                     tokens.append(token)
 
         return tokens
 
-    # TODO: Anreden rausfiltern
+    def get_most_common_words(self, tokens: list, num_words: int = 100) -> pd.DataFrame:
+        word_counter = Counter(token.text.lower() for token in tokens)
+        word_count = word_counter.most_common(num_words)
+        df = pd.DataFrame(word_count, columns=["word", "count"])
+
+        return df
+
+    def plot_most_common_words(self, df: pd.DataFrame) -> None:
+        fig = px.bar(
+            df,
+            x="word",
+            y="count",
+            title="Meist verwendete Wörter",
+            text="word",
+            orientation="h",
+        )
+        fig.update_xaxes(title="Wort", showticklabels=False).update_yaxes(
+            title="Anzahl des Auftretens"
+        )
+
+        fig.show()
+
     def get_wordcloud(
         self, tokens: list, width: int, height: int, num_words: int = 200
-    ) -> tuple[WordCloud, Figure]:
+    ) -> tuple[np.ndarray, str]:
         word_counter = Counter(token.text.lower() for token in tokens)
         wordcloud = WordCloud(
             width=width - int(width * 0.1),
@@ -134,17 +200,24 @@ class DataAnalyzer:
             min_font_size=12,
             max_words=num_words,
         ).generate_from_frequencies(word_counter)
+        wordcloud_image = wordcloud.to_image()
+        wordcloud_array = np.array(wordcloud_image)
+
         word_count_range = word_counter.most_common(num_words)
         highest_occurrence = word_count_range[0][1]
         lowest_occurrence = word_count_range[-1][1]
+        occurence_range = f"Range: {lowest_occurrence}-{highest_occurrence}"
 
-        wordcloud_image = wordcloud.to_image()
-        wordcloud_array = np.array(wordcloud_image)
-        fig = px.imshow(wordcloud_array, width=width, height=height)
+        return wordcloud_array, occurence_range
+
+    def plot_wordcloud(
+        self, wordcloud_array: np.ndarray, occurence_range: str, width: int, height: int
+    ) -> None:
+        fig = px.imshow(
+            wordcloud_array, title=occurence_range, width=width, height=height
+        )
         fig.update_xaxes(showticklabels=False).update_yaxes(showticklabels=False)
-
-        print(f"Range: {lowest_occurrence}-{highest_occurrence}")
-        return wordcloud, fig
+        fig.show()
 
     def get_word_frequency(self, tokens: list) -> dict:
         word_freq = Counter(token.text.lower() for token in tokens)
@@ -183,7 +256,20 @@ class DataAnalyzer:
         return df
 
     def plot_words_per_rede(self, df: pd.DataFrame) -> None:
-        fig = px.box(df, x="word_count", title="Wordcount Verteilung")
+        fig_1 = px.histogram(df, x="word_count")
+        fig_2 = px.box(df, x="word_count")
+        fig = make_subplots(
+            rows=2, cols=1, shared_xaxes=True, subplot_titles=("Histogramm", "Boxplot")
+        )
+        for trace in fig_1.data:
+            fig.add_trace(trace, row=1, col=1)
+        for trace in fig_2.data:
+            fig.add_trace(trace, row=2, col=1)
+
+        fig.update_xaxes(title_text="Wörteranzahl", row=2, col=1)
+        fig.update_yaxes(title_text="Häufigkeit", row=1, col=1)
+        fig.update_layout(title_text="Verteilung Redelängen", height=600)
+
         fig.show()
 
     @connect_db
@@ -221,7 +307,8 @@ class DataAnalyzer:
             markers=True,
             category_orders={"year": {2021, 2022, 2023, 2024, 2025}},
         )
-        fig.update_xaxes(tickformat="%d.%m", nticks=12)
+        fig.update_xaxes(tickformat="%d.%m", nticks=12, title="Datum")
+        fig.update_yaxes(title="Anzahl Reden")
 
         fig.show()
 
@@ -253,6 +340,9 @@ class DataAnalyzer:
             color="fraktion",
             color_discrete_map=self.color_map,
         )
+        fig.update_xaxes(title="Fraktion").update_yaxes(
+            title="Anzahl Reden"
+        ).update_legends(title="Fraktion")
 
         fig.show()
 
@@ -296,15 +386,20 @@ class DataAnalyzer:
         return mean_word_count, highest_mean, smallest_mean
 
     def plot_mean_rede_length(self, df: pd.DataFrame) -> None:
-        fig_1 = px.histogram(df, x="mean_word_count")
+        fig_1 = px.histogram(df, x="mean_word_count", range_x=[0, 1700])
         fig_2 = px.box(df, x="mean_word_count")
 
-        fig = make_subplots(rows=2, cols=1, subplot_titles=("Histogramm", "Boxplot"))
+        fig = make_subplots(
+            rows=2, cols=1, shared_xaxes=True, subplot_titles=("Histogramm", "Boxplot")
+        )
         for trace in fig_1.data:
             fig.add_trace(trace, row=1, col=1)
         for trace in fig_2.data:
             fig.add_trace(trace, row=2, col=1)
-        fig.update_layout(title_text="Mittlere Redelänge pro Redner", height=600)
+
+        fig.update_xaxes(title_text="Wörteranzahl", row=2, col=1)
+        fig.update_yaxes(title_text="Häufigkeit", row=1, col=1)
+        fig.update_layout(title_text="Verteilung mittlerer Redelängen", height=600)
 
         fig.show()
 
@@ -337,6 +432,9 @@ class DataAnalyzer:
             color_discrete_map=self.color_map,
         )
         fig.update_layout(xaxis_categoryorder="total descending")
+        fig.update_xaxes(title="Name des Kommentators").update_yaxes(
+            title="Anzahl der Kommentare"
+        ).update_legends(title="Fraktion")
 
         fig.show()
 
@@ -367,6 +465,9 @@ class DataAnalyzer:
             title="Kommentare pro Fraktion",
         )
         fig.update_layout(xaxis_categoryorder="total descending")
+        fig.update_xaxes(title="Fraktion").update_yaxes(
+            title="Anzahl Kommentare"
+        ).update_legends(title="Fraktion")
 
         fig.show()
 
@@ -397,10 +498,36 @@ class DataAnalyzer:
             df[:num],
             x="redner",
             y="kommentar_count",
-            title="Kommentare pro Redner",
+            title="Erhaltene Kommentare pro Redner",
             color="fraktion",
             color_discrete_map=self.color_map,
         )
         fig.update_layout(xaxis_categoryorder="total descending")
+        fig.update_xaxes(title="Name des Redners").update_yaxes(
+            title="Anzahl der geäußerten Kommentare"
+        ).update_legends(title="Fraktion")
 
         fig.show()
+
+    def analyze_sentiment(
+        self,
+        reden: dict,
+        model: Literal["hugging", "german", "lookup"],
+        batch_size: int,
+    ) -> dict:
+        if model == "hugging":
+            sentiment_model = HuggingFaceSentimentAnalyzer()
+        elif model == "german":
+            sentiment_model = GermanSentimentAnalyzer()
+        elif model == "lookup":
+            sentiment_model = LookupSentimentAnalyzer("data/sentiment")
+        else:
+            raise ValueError("invalid model String")
+
+        sentiments = {}
+        for key, rede_sentences in reden.items():
+            sentiments[key] = sentiment_model.analyze_sentence_list(
+                rede_sentences, batch_size
+            )
+
+        return sentiments
