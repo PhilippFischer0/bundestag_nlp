@@ -26,6 +26,7 @@ transformers = "^4.49.0"
 protobuf = "^5.29.3"
 tiktoken = "^0.9.0"
 sentencepiece = "^0.2.0"
+scikit-learn = "^1.6.1"
 
 [tool.poetry.group.dev.dependencies]
 black = {extras = ["jupyter"], version = "^24.10.0"}
