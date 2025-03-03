@@ -1,5 +1,7 @@
+import gc
 import os
 import re
+from multiprocessing import Pool, cpu_count
 
 import de_core_news_sm
 import torch
@@ -7,6 +9,7 @@ from germansentiment import SentimentModel
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 
+# TODO: prediction wahrscheinlichkeiten aufsummieren (ngativ -> * (-1), positiv * 1, neutral * 0)
 class HuggingFaceSentimentAnalyzer:
 
     def __init__(self):
@@ -16,7 +19,7 @@ class HuggingFaceSentimentAnalyzer:
             self.device = "cpu"
         self.model = AutoModelForSequenceClassification.from_pretrained(
             "ssary/XLM-RoBERTa-German-sentiment"
-        )
+        ).to(self.device)
         self.tokenizer = AutoTokenizer.from_pretrained(
             "ssary/XLM-RoBERTa-German-sentiment"
         )
@@ -27,27 +30,39 @@ class HuggingFaceSentimentAnalyzer:
             return_tensors="pt",
             truncation=True,
             add_special_tokens=True,
+            padding=True,
             max_length=512,
         ).to(self.device)
         with torch.no_grad():
             outputs = self.model(**inputs)
         predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
-        print(predictions)
         sentiment_classes = ["negative", "neutral", "positive"]
 
-        return [sentiment_classes[prediction.argmax()] for prediction in predictions]
+        result = []
+        # TODO: Vektorisieren
+        for prediction in predictions:
+            idx = prediction.argmax().cpu().item()
+            result.append(prediction[idx].cpu().item() * (idx - 1))
+            # print(sentiment_classes[prediction.argmax().cpu()], result)
+
+        return result
 
     def analyze_sentence_list(self, sentences: list | str, batch_size: int) -> list:
         if isinstance(sentences, str):
             return self.predict_sentiment([sentences])
 
-        sentiments = []
+        num_sentences = 0
         for i in range(0, len(sentences), batch_size):
             batch = sentences[i : i + batch_size]
             batch_sentiments = self.predict_sentiment(batch)
-            sentiments.extend(batch_sentiments)
+            num_sentences += len(batch_sentiments)
 
-        return sentiments
+        return sum(batch_sentiments) / num_sentences
+
+    def __del__(self):
+        del self.model
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
 class GermanSentimentAnalyzer:
@@ -60,11 +75,32 @@ class GermanSentimentAnalyzer:
             return self.model.predict_sentiment([sentences])
 
         sentiments = []
+        num_sentences = 0
         for i in range(0, len(sentences), batch_size):
             batch = sentences[i : i + batch_size]
-            batch_sentiments = self.model.predict_sentiment(batch)
-            sentiments.extend(batch_sentiments)
-        return sentiments
+            batch_sentiments = self.model.predict_sentiment(
+                batch, output_probabilities=True
+            )
+            predictions = batch_sentiments[1]
+            num_sentences += len(predictions)
+            for prediction in predictions:
+                probabilities = []
+                for pred in prediction:
+                    probabilities.append(pred[1])
+                winning_value = max(probabilities)
+                if winning_value == probabilities[0]:
+                    sentiments.append(winning_value)
+                elif winning_value == probabilities[1]:
+                    sentiments.append(winning_value * (-1))
+                else:
+                    sentiments.append(0.0)
+
+        return sum(sentiments) / num_sentences
+
+    def __del__(self):
+        del self.model
+        gc.collect()
+        torch.cuda.empty_cache()
 
 
 class LookupSentimentAnalyzer:
@@ -106,7 +142,7 @@ class LookupSentimentAnalyzer:
         words = []
         doc = self.nlp(sentence)
         for token in doc:
-            if token.is_alpha:
+            if token.is_alpha or token.like_num:
                 words.append(token.text)
         num_words = len(words)
         found_words = 0
@@ -115,12 +151,15 @@ class LookupSentimentAnalyzer:
                 found_words += 1
                 score += self.sentiment[word]
             # score += self.sentiment.get(word, 0.0)
+        # TODO: better fix for this -> parsing
+        if num_words == 0:
+            num_words = 1
 
         score = score * (found_words / num_words) / num_words
 
         return score
 
-    def analyze_sentence_list(self, sentences: list, _: int) -> list:
+    def analyze_sentence_list(self, sentences: list) -> list:
         sentiments = []
         for sentence in sentences:
             sentiment = self.analyze_sentence(sentence)

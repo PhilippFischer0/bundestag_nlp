@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import sqlite3
 from collections import Counter
 from typing import Literal
@@ -6,7 +7,9 @@ import de_core_news_sm
 import numpy as np
 import pandas as pd
 import plotly.express as px
+from itertools import combinations
 from plotly.subplots import make_subplots
+from sklearn.metrics import ConfusionMatrixDisplay
 from tqdm.autonotebook import tqdm
 from wordcloud import WordCloud
 
@@ -18,10 +21,10 @@ from src.analysis.sentiment_analysis import (
 
 
 def connect_db(func):
-    def inner(self):
+    def inner(self, *args, **kwargs):
         with sqlite3.connect(self.database_path) as conn:
             cursor = conn.cursor()
-            return func(self, cursor)
+            return func(self, cursor, *args, **kwargs)
 
     return inner
 
@@ -511,7 +514,7 @@ class DataAnalyzer:
 
     def analyze_sentiment(
         self,
-        reden: dict,
+        reden_by_id: dict,
         model: Literal["hugging", "german", "lookup"],
         batch_size: int,
     ) -> dict:
@@ -520,14 +523,169 @@ class DataAnalyzer:
         elif model == "german":
             sentiment_model = GermanSentimentAnalyzer()
         elif model == "lookup":
-            sentiment_model = LookupSentimentAnalyzer("data/sentiment")
+            with mp.Pool(mp.cpu_count()) as pool:
+                scores = pool.map(
+                    LookupSentimentAnalyzer("data/sentiment").analyze_sentence_list,
+                    reden_by_id.values(),
+                )
+            sentiments = dict(zip(reden_by_id.keys(), scores))
+            return sentiments
+
         else:
             raise ValueError("invalid model String")
 
         sentiments = {}
-        for key, rede_sentences in reden.items():
+        for key, rede_sentences in reden_by_id.items():
             sentiments[key] = sentiment_model.analyze_sentence_list(
                 rede_sentences, batch_size
             )
+        del sentiment_model
 
         return sentiments
+
+    def analyze_sentiment_all_models(self, reden_by_id: dict, batch_size: int) -> dict:
+        results = dict()
+        for model in ["lookup", "hugging", "german"]:
+            model_results = self.analyze_sentiment(reden_by_id, model, batch_size)
+            results[model] = model_results
+
+        return results
+
+    @connect_db
+    def get_rede_sentiments_by_date(
+        self, cursor: sqlite3.Cursor, reden_sentiments: dict
+    ) -> pd.DataFrame:
+        reden_date = {}
+        reden_cursor = cursor.execute(
+            """
+            SELECT r.rede_id, s.datum FROM reden as r
+            JOIN tagesordnungspunkte as t
+            ON r.tagesordnungspunkt_id = t.tagesordnungspunkt_id
+            JOIN sitzungen as s
+            ON t.sitzungs_id = s.sitzungs_id
+            """
+        )
+        for row in reden_cursor:
+            reden_date[row[0]] = row[1]
+
+        data = []
+        for model, sentiments in reden_sentiments.items():
+            for rede_id, scores in sentiments.items():
+                date = reden_date.get(rede_id)
+                if date:
+                    data.append(
+                        {
+                            "rede_id": rede_id,
+                            "datum": date,
+                            "model": model,
+                            "scores": scores,
+                        }
+                    )
+
+        df = pd.DataFrame(data, columns=["rede_id", "datum", "model", "scores"])
+        df["date"] = pd.to_datetime(df["datum"]).dt.strftime("%m-%d")
+        df["year"] = pd.to_datetime(df["datum"]).dt.year
+        df = df.sort_values(by="date")
+        df["date"] = pd.to_datetime(df["date"], format="%m-%d")
+
+        return df
+
+    def plot_sentiments_by_date(self, df: pd.DataFrame) -> None:
+        fig = px.box(
+            df,
+            x="date",
+            y="scores",
+            color="model",
+            facet_row="year",
+            height=1200,
+            category_orders={"year": {2021, 2022, 2023, 2024, 2025}},
+            title="Scoreverteilungen über die Jahre verteilt",
+        )
+        fig.update_traces(boxmean=True)
+        fig.update_xaxes(tickformat="%d.%m", nticks=12, title="Datum").update_yaxes(
+            title="Score"
+        )
+
+        fig.show()
+
+    def get_sentiment_count_by_date(
+        self, df_sentiment_by_date: pd.DataFrame
+    ) -> pd.DataFrame:
+        def map_polarity(value: float) -> str:
+            if value > 0.0:
+                return "positive"
+            elif value == 0.0:
+                return "neutral"
+            else:
+                return "negative"
+
+        df_sentiment_by_date["polarity"] = df_sentiment_by_date["scores"].map(
+            map_polarity
+        )
+
+        df = (
+            df_sentiment_by_date.groupby(by=["model", "datum"])["polarity"]
+            .value_counts()
+            .unstack(fill_value=0)
+            .reset_index()
+        )
+
+        df["negative"] = df["negative"].apply(lambda x: x * -1)
+        df["date"] = pd.to_datetime(df["datum"]).dt.strftime("%m-%d")
+        df["year"] = pd.to_datetime(df["datum"]).dt.year
+        df = df.sort_values(by="date")
+        df["date"] = pd.to_datetime(df["date"], format="%m-%d")
+
+        return df
+
+    def plot_sentiment_count_by_date(self, df: pd.DataFrame) -> None:
+        fig = px.line(
+            df,
+            x="date",
+            y="positive",
+            color="model",
+            facet_row="year",
+            height=1200,
+            markers=True,
+            category_orders={"year": {2021, 2022, 2023, 2024, 2025}},
+            title="Anzahl Positiver Reden über x-Achse und negativer Reden unter x-Achse",
+        )
+
+        negative_fig = px.line(
+            df,
+            x="date",
+            y="negative",
+            color="model",
+            facet_row="year",
+            markers=True,
+            category_orders={"year": {2021, 2022, 2023, 2024, 2025}},
+        )
+        for trace in negative_fig.data:
+            fig.add_trace(trace)
+        fig.update_xaxes(tickformat="%d.%m", nticks=12, title="Datum").update_yaxes(
+            title="Anzahl Reden"
+        )
+        fig.show()
+
+    def get_correlation_matrices(self, df_sentiment_by_date: pd.DataFrame) -> None:
+        def map_polarity(value: float) -> str:
+            if value > 0.0:
+                return "positive"
+            elif value == 0.0:
+                return "neutral"
+            else:
+                return "negative"
+        
+        df_sentiment = df_sentiment_by_date.drop(["date", "datum", "year"], axis=1)
+        df_sentiment = df_sentiment.sort_index()
+        df_sentiment["polarity"] = df_sentiment["scores"].map(map_polarity)
+
+        for i, pair in enumerate(combinations(df_sentiment["model"].unique(), 2)):
+            print(pair)
+            filtered_df1 = df_sentiment.query(f"model == '{pair[0]}'")
+            filtered_df2 = df_sentiment.query(f"model == '{pair[1]}'")
+
+            ConfusionMatrixDisplay.from_predictions(
+                filtered_df1["polarity"], filtered_df2["polarity"], labels=df_sentiment["polarity"].unique()
+            )
+            
