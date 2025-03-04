@@ -1,15 +1,15 @@
 import multiprocessing as mp
 import sqlite3
 from collections import Counter
+from itertools import combinations
 from typing import Literal
 
 import de_core_news_sm
 import numpy as np
 import pandas as pd
 import plotly.express as px
-from itertools import combinations
 from plotly.subplots import make_subplots
-from sklearn.metrics import ConfusionMatrixDisplay
+from sklearn.metrics import confusion_matrix
 from tqdm.autonotebook import tqdm
 from wordcloud import WordCloud
 
@@ -27,6 +27,15 @@ def connect_db(func):
             return func(self, cursor, *args, **kwargs)
 
     return inner
+
+
+def map_polarity(value: float) -> str:
+    if value > 0.0:
+        return "positive"
+    elif value == 0.0:
+        return "neutral"
+    else:
+        return "negative"
 
 
 class DataAnalyzer:
@@ -142,6 +151,7 @@ class DataAnalyzer:
 
         return tokens
 
+    # returns only noun tokens that are not in anreden.txt
     def tokenize_nouns(self, sentences: list) -> list:
         with open("data/filter/anreden.txt", "rt", encoding="utf-8") as file:
             anreden = file.read().split(",")
@@ -184,7 +194,6 @@ class DataAnalyzer:
             y="count",
             title="Meist verwendete Wörter",
             text="word",
-            orientation="h",
         )
         fig.update_xaxes(title="Wort", showticklabels=False).update_yaxes(
             title="Anzahl des Auftretens"
@@ -512,6 +521,7 @@ class DataAnalyzer:
 
         fig.show()
 
+    # analyze sentiment for each rede with a single model
     def analyze_sentiment(
         self,
         reden_by_id: dict,
@@ -525,7 +535,7 @@ class DataAnalyzer:
         elif model == "lookup":
             with mp.Pool(mp.cpu_count()) as pool:
                 scores = pool.map(
-                    LookupSentimentAnalyzer("data/sentiment").analyze_sentence_list,
+                    LookupSentimentAnalyzer("data/sentiment").analyze_rede,
                     reden_by_id.values(),
                 )
             sentiments = dict(zip(reden_by_id.keys(), scores))
@@ -536,7 +546,7 @@ class DataAnalyzer:
 
         sentiments = {}
         for key, rede_sentences in reden_by_id.items():
-            sentiments[key] = sentiment_model.analyze_sentence_list(
+            sentiments[key] = sentiment_model.analyze_rede(
                 rede_sentences, batch_size
             )
         del sentiment_model
@@ -611,13 +621,6 @@ class DataAnalyzer:
     def get_sentiment_count_by_date(
         self, df_sentiment_by_date: pd.DataFrame
     ) -> pd.DataFrame:
-        def map_polarity(value: float) -> str:
-            if value > 0.0:
-                return "positive"
-            elif value == 0.0:
-                return "neutral"
-            else:
-                return "negative"
 
         df_sentiment_by_date["polarity"] = df_sentiment_by_date["scores"].map(
             map_polarity
@@ -667,25 +670,42 @@ class DataAnalyzer:
         )
         fig.show()
 
-    def get_correlation_matrices(self, df_sentiment_by_date: pd.DataFrame) -> None:
-        def map_polarity(value: float) -> str:
-            if value > 0.0:
-                return "positive"
-            elif value == 0.0:
-                return "neutral"
-            else:
-                return "negative"
-        
-        df_sentiment = df_sentiment_by_date.drop(["date", "datum", "year"], axis=1)
-        df_sentiment = df_sentiment.sort_index()
+    def plot_correlation_matrices(self, df_sentiment_by_date: pd.DataFrame) -> None:
+        df_sentiment = df_sentiment_by_date.filter(["scores", "model"], axis=1)
         df_sentiment["polarity"] = df_sentiment["scores"].map(map_polarity)
 
+        fig = make_subplots(
+            rows=1,
+            cols=3,
+            subplot_titles=[
+                f"{pair[0].capitalize()} vs {pair[1].capitalize()}"
+                for pair in combinations(df_sentiment["model"].unique(), 2)
+            ],
+        )
+
         for i, pair in enumerate(combinations(df_sentiment["model"].unique(), 2)):
-            print(pair)
             filtered_df1 = df_sentiment.query(f"model == '{pair[0]}'")
             filtered_df2 = df_sentiment.query(f"model == '{pair[1]}'")
 
-            ConfusionMatrixDisplay.from_predictions(
-                filtered_df1["polarity"], filtered_df2["polarity"], labels=df_sentiment["polarity"].unique()
+            matrix = confusion_matrix(
+                filtered_df1["polarity"],
+                filtered_df2["polarity"],
+                labels=df_sentiment["polarity"].unique(),
+                normalize="all",
             )
-            
+
+            matrix_fig = px.imshow(
+                matrix,
+                x=filtered_df1["polarity"].unique(),
+                y=filtered_df2["polarity"].unique(),
+            )
+
+            for trace in matrix_fig.data:
+                fig.add_trace(trace, row=1, col=i + 1)
+            fig.update_xaxes(title=f"{pair[1]}", row=1, col=i + 1).update_yaxes(
+                title=f"{pair[0]}", row=1, col=i + 1
+            )
+
+        fig.update_layout(title="Confusion Matrix")
+
+        fig.show()
