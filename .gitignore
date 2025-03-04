@@ -1,4 +1,6 @@
 /data/*
+!/data/filter
+!/data/sentiment
 __pycache__/
 testing.py
 notes.txt
