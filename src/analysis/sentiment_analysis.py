@@ -8,8 +8,7 @@ import torch
 from germansentiment import SentimentModel
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-
-# TODO: prediction wahrscheinlichkeiten aufsummieren (ngativ -> * (-1), positiv * 1, neutral * 0)
+# as there are no scores in the first two models it returns the probability of the highest value
 class HuggingFaceSentimentAnalyzer:
 
     def __init__(self):
@@ -36,18 +35,13 @@ class HuggingFaceSentimentAnalyzer:
         with torch.no_grad():
             outputs = self.model(**inputs)
         predictions = torch.nn.functional.softmax(outputs.logits, dim=-1)
-        sentiment_classes = ["negative", "neutral", "positive"]
 
-        result = []
-        # TODO: Vektorisieren
-        for prediction in predictions:
-            idx = prediction.argmax().cpu().item()
-            result.append(prediction[idx].cpu().item() * (idx - 1))
-            # print(sentiment_classes[prediction.argmax().cpu()], result)
+        idx = predictions.argmax(dim=1).cpu()
+        result = (predictions[range(len(predictions)), idx].cpu() * (idx - 1)).tolist()
 
         return result
 
-    def analyze_sentence_list(self, sentences: list | str, batch_size: int) -> list:
+    def analyze_rede(self, sentences: list | str, batch_size: int) -> list:
         if isinstance(sentences, str):
             return self.predict_sentiment([sentences])
 
@@ -70,7 +64,7 @@ class GermanSentimentAnalyzer:
     def __init__(self):
         self.model = SentimentModel()
 
-    def analyze_sentence_list(self, sentences: list | str, batch_size: int) -> list:
+    def analyze_rede(self, sentences: list | str, batch_size: int) -> list:
         if isinstance(sentences, str):
             return self.model.predict_sentiment([sentences])
 
@@ -150,7 +144,6 @@ class LookupSentimentAnalyzer:
             if word in self.sentiment:
                 found_words += 1
                 score += self.sentiment[word]
-            # score += self.sentiment.get(word, 0.0)
         # TODO: better fix for this -> parsing
         if num_words == 0:
             num_words = 1
@@ -159,7 +152,7 @@ class LookupSentimentAnalyzer:
 
         return score
 
-    def analyze_sentence_list(self, sentences: list) -> list:
+    def analyze_rede(self, sentences: list) -> list:
         sentiments = []
         for sentence in sentences:
             sentiment = self.analyze_sentence(sentence)
