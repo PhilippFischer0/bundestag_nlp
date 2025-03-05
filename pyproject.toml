@@ -6,19 +6,44 @@ authors = ["Philipp Fischer <philipp.fischer@js-soft.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10,<3.13"
 nltk = "^3.9.1"
 pandas = "^2.2.3"
 matplotlib = "^3.10.0"
 requests = "^2.32.3"
-isort = "^6.0.0"
+spacy = "^3.8.4"
+de-core-news-sm = {url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl"}
+ipykernel = "^6.29.5"
+tqdm = "^4.67.1"
+ipywidgets = "^8.1.5"
+jupyter = "^1.1.1"
+plotly = "^6.0.0"
 beautifulsoup4 = "^4.13.3"
+wordcloud = "^1.9.4"
+germansentiment = "^1.1.0"
+torch = "^2.6.0"
+transformers = "^4.49.0"
+protobuf = "^5.29.3"
+tiktoken = "^0.9.0"
+sentencepiece = "^0.2.0"
+scikit-learn = "^1.6.1"
 
 [tool.poetry.group.dev.dependencies]
 black = {extras = ["jupyter"], version = "^24.10.0"}
+isort = "^6.0.0"
 
 [tool.black]
 line-length = 88
+
+[tool.pylint]
+disable = [
+    "C0114",  # Missing module docstring
+    "C0115",  # Missing class docstring
+    "C0116",  # Missing function or method docstring
+    "C0301",  # line too long
+    "W0511",  # fixme Warning
+]
+max-line-length = 88
 
 [build-system]
 requires = ["poetry-core"]
